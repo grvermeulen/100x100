@@ -294,7 +294,10 @@
       { key: "ELEVENLABS_VOICE_ID2", label: "Voice 2" },
       { key: "ELEVENLABS_VOICE_ID3", label: "Voice 3" },
       { key: "ELEVENLABS_VOICE_ID4", label: "Voice 4" },
-      { key: "ELEVENLABS_VOICE_ID5", label: "Voice 5" }
+      { key: "ELEVENLABS_VOICE_ID5", label: "Voice 5" },
+      { key: "ELEVENLABS_VOICE_ID6", label: "Voice 6" },
+      { key: "ELEVENLABS_VOICE_ID7", label: "Voice 7" },
+      { key: "ELEVENLABS_VOICE_ID8", label: "Voice 8" }
     ];
 
     const state = {
@@ -529,13 +532,12 @@
 
     async function getAiShout(name, totalMeters) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1200);
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
       try {
         const response = await fetch("/api/shout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            swimmerName: name,
             totalMeters,
             recentShouts
           }),
