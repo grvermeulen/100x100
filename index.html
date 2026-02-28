@@ -259,13 +259,13 @@
     const MILESTONES = [1000, 2500, 5000, 7500, 10000];
     const ROTATING_SHOUTS = [
       "Splash level: legendary!",
-      "Turbo dolphin mode activated!",
+      "Dolphin mode activated!",
       "That lane rope is getting nervous.",
-      "Another 100m? Light work.",
-      "Water: defeated. Next lap!",
-      "You swim faster than my Wi-Fi.",
-      "Big stroke energy!",
-      "Poseidon approves this lap."
+      "Another hundred? Easy work.",
+      "Water defeated. On to the next lap.",
+      "You are faster than my Wi-Fi.",
+      "Strong strokes, smooth rhythm.",
+      "Poseidon officially approves this lap."
     ];
 
     const state = {
@@ -285,6 +285,7 @@
 
     let toastTimer = null;
     let shoutIndex = 0;
+    let preferredVoice = null;
     const canSpeak =
       typeof window !== "undefined" &&
       "speechSynthesis" in window &&
@@ -338,12 +339,41 @@
       }, 2400);
     }
 
+    function selectPreferredEnglishVoice() {
+      if (!canSpeak) return;
+      const voices = window.speechSynthesis.getVoices();
+      if (!voices.length) return;
+
+      const englishVoices = voices.filter((voice) =>
+        String(voice.lang || "").toLowerCase().startsWith("en")
+      );
+      if (!englishVoices.length) {
+        preferredVoice = null;
+        return;
+      }
+
+      const rankedVoice =
+        englishVoices.find((voice) => String(voice.lang).toLowerCase() === "en-us") ||
+        englishVoices.find((voice) => String(voice.lang).toLowerCase().startsWith("en-gb")) ||
+        englishVoices.find((voice) =>
+          /neural|enhanced|natural|premium/i.test(String(voice.name || ""))
+        ) ||
+        englishVoices[0];
+
+      preferredVoice = rankedVoice;
+    }
+
     function speakText(text) {
       if (!canSpeak || !state.voiceEnabled) return;
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.04;
-      utterance.pitch = 1.08;
+      utterance.lang = "en-US";
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+        utterance.lang = preferredVoice.lang || "en-US";
+      }
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
       window.speechSynthesis.speak(utterance);
     }
 
@@ -487,6 +517,10 @@
     });
 
     loadState();
+    selectPreferredEnglishVoice();
+    if (canSpeak && window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = selectPreferredEnglishVoice;
+    }
     updateVoiceButton();
     renderPeople();
     updateSummary();
