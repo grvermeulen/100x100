@@ -391,6 +391,11 @@
     }
 
     resetButton.addEventListener("click", () => {
+      const confirmed = window.confirm(
+        "Reset all lap counts for everyone? This cannot be undone."
+      );
+      if (!confirmed) return;
+
       PEOPLE.forEach((name) => (state.lapsByPerson[name] = 0));
       state.reachedMilestones = [];
       saveState();
