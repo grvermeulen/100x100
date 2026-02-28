@@ -97,6 +97,16 @@
       font-size: 0.95rem;
     }
 
+    .voice-toggle {
+      margin-top: 10px;
+      width: 100%;
+      min-height: 40px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #f8fafc;
+      background: #0ea5e9;
+    }
+
     .people {
       display: grid;
       grid-template-columns: 1fr;
@@ -229,6 +239,7 @@
         <div class="bar-fill" id="progressFill"></div>
       </div>
       <p class="remaining" id="remainingText">10,000m to go.</p>
+      <button class="voice-toggle" id="voiceToggleButton" type="button">Voice: On</button>
     </section>
 
     <section class="people" id="peopleList"></section>
@@ -246,10 +257,21 @@
     const STORAGE_KEY = "swim-100x100-v1";
     const PEOPLE = ["Carlijn", "Guido", "Rik", "Saskia", "Wouter"];
     const MILESTONES = [1000, 2500, 5000, 7500, 10000];
+    const ROTATING_SHOUTS = [
+      "Splash level: legendary!",
+      "Turbo dolphin mode activated!",
+      "That lane rope is getting nervous.",
+      "Another 100m? Light work.",
+      "Water: defeated. Next lap!",
+      "You swim faster than my Wi-Fi.",
+      "Big stroke energy!",
+      "Poseidon approves this lap."
+    ];
 
     const state = {
       lapsByPerson: {},
-      reachedMilestones: []
+      reachedMilestones: [],
+      voiceEnabled: true
     };
 
     const peopleList = document.getElementById("peopleList");
@@ -257,10 +279,16 @@
     const totalLapsEl = document.getElementById("totalLaps");
     const progressFillEl = document.getElementById("progressFill");
     const remainingTextEl = document.getElementById("remainingText");
+    const voiceToggleButton = document.getElementById("voiceToggleButton");
     const resetButton = document.getElementById("resetButton");
     const toastEl = document.getElementById("toast");
 
     let toastTimer = null;
+    let shoutIndex = 0;
+    const canSpeak =
+      typeof window !== "undefined" &&
+      "speechSynthesis" in window &&
+      "SpeechSynthesisUtterance" in window;
 
     function formatMeters(value) {
       return `${value.toLocaleString()}m`;
@@ -287,9 +315,11 @@
         state.reachedMilestones = Array.isArray(parsed?.reachedMilestones)
           ? parsed.reachedMilestones.filter((m) => MILESTONES.includes(m))
           : [];
+        state.voiceEnabled = parsed?.voiceEnabled !== false;
       } catch {
         PEOPLE.forEach((name) => (state.lapsByPerson[name] = 0));
         state.reachedMilestones = [];
+        state.voiceEnabled = true;
       }
     }
 
@@ -308,17 +338,45 @@
       }, 2400);
     }
 
+    function speakText(text) {
+      if (!canSpeak || !state.voiceEnabled) return;
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.04;
+      utterance.pitch = 1.08;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function updateVoiceButton() {
+      if (!canSpeak) {
+        voiceToggleButton.disabled = true;
+        voiceToggleButton.textContent = "Voice not supported on this browser";
+        voiceToggleButton.style.background = "#475569";
+        return;
+      }
+      voiceToggleButton.disabled = false;
+      voiceToggleButton.textContent = state.voiceEnabled ? "Voice: On" : "Voice: Off";
+      voiceToggleButton.style.background = state.voiceEnabled ? "#0ea5e9" : "#64748b";
+    }
+
     function checkMilestones(totalMeters) {
+      let milestoneTriggered = false;
       for (const milestone of MILESTONES) {
         if (totalMeters >= milestone && !state.reachedMilestones.includes(milestone)) {
           state.reachedMilestones.push(milestone);
+          milestoneTriggered = true;
           if (milestone === TARGET_METERS) {
-            showToast("Amazing! Team target reached: 10,000m!", "done");
+            const message = "Amazing! Team target reached: 10,000m!";
+            showToast(message, "done");
+            speakText("Amazing. Team target reached. Ten thousand meters.");
           } else {
-            showToast(`Great job! ${formatMeters(milestone)} reached!`, "warn");
+            const message = `Great job! ${formatMeters(milestone)} reached!`;
+            showToast(message, "warn");
+            speakText(`Great job. ${milestone} meters reached.`);
           }
         }
       }
+      return milestoneTriggered;
     }
 
     function updateSummary() {
@@ -337,7 +395,13 @@
         remainingTextEl.textContent = "Target done. Keep going for extra meters!";
       }
 
-      checkMilestones(totalMeters);
+      return checkMilestones(totalMeters);
+    }
+
+    function nextShout(name) {
+      const shout = ROTATING_SHOUTS[shoutIndex];
+      shoutIndex = (shoutIndex + 1) % ROTATING_SHOUTS.length;
+      return `${name}: ${shout}`;
     }
 
     function renderPeople() {
@@ -381,7 +445,12 @@
           state.lapsByPerson[name] += 1;
           saveState();
           renderPeople();
-          updateSummary();
+          const milestoneTriggered = updateSummary();
+          if (!milestoneTriggered) {
+            const shout = nextShout(name);
+            showToast(shout, "done");
+            speakText(shout);
+          }
         });
 
         actions.append(minusBtn, plusBtn);
@@ -404,7 +473,21 @@
       showToast("All counts reset.", "warn");
     });
 
+    voiceToggleButton.addEventListener("click", () => {
+      state.voiceEnabled = !state.voiceEnabled;
+      saveState();
+      updateVoiceButton();
+      if (state.voiceEnabled) {
+        showToast("Voice shout-outs enabled.", "done");
+        speakText("Voice shout-outs enabled.");
+      } else {
+        if (canSpeak) window.speechSynthesis.cancel();
+        showToast("Voice shout-outs muted.", "warn");
+      }
+    });
+
     loadState();
+    updateVoiceButton();
     renderPeople();
     updateSummary();
   </script>
