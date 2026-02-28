@@ -1,0 +1,35 @@
+---
+description: Project guide for the 100x100 swim counter app
+alwaysApply: true
+---
+
+# 100x100 App Guide
+
+## Architecture
+- Keep the app lightweight and mobile-first.
+- Frontend is a single page in `index.html` (HTML, CSS, vanilla JS).
+- Serverless endpoints live in `api/` (`/api/tts`, `/api/shout`).
+
+## Frontend Conventions
+- Preserve fast tap UX on `+/-` and avoid blocking the UI.
+- Keep swimmer names fixed: `Carlijn`, `Guido`, `Rik`, `Saskia`, `Wouter`.
+- Persist user state in `localStorage` (laps, voice toggle, selected voice).
+- Maintain fallback behavior: if AI/voice APIs fail, app must still function.
+
+## Voice and Shouts
+- ElevenLabs voice selection comes from env-backed keys (`ELEVENLABS_VOICE_ID*`).
+- AI shout text should be short, fluent, family-friendly, and avoid swimmer names.
+- UI already prefixes swimmer name; generated shout text should not repeat names.
+- Keep cancellation logic for overlapping audio/speech to avoid noisy stacking.
+
+## API and Security
+- Never expose API keys in frontend code.
+- Keep all provider calls in serverless routes (`api/*.js`).
+- Validate and sanitize incoming text/body fields.
+- Trim env vars before use to avoid newline/format issues.
+
+## Deployment and Reliability
+- Prefer deterministic defaults with graceful fallbacks.
+- After behavior changes to voice/AI routes, verify via production endpoint tests.
+- Keep docs in `README.md` aligned with required env vars.
+- If tests pass; commit, push, deploy
