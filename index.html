@@ -107,6 +107,26 @@
       background: #0ea5e9;
     }
 
+    .voice-select-label {
+      display: block;
+      margin-top: 10px;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .voice-select {
+      width: 100%;
+      min-height: 40px;
+      border-radius: 10px;
+      border: 1px solid #334155;
+      background: #0b1220;
+      color: #f8fafc;
+      padding: 8px 10px;
+      font-size: 0.95rem;
+    }
+
     .people {
       display: grid;
       grid-template-columns: 1fr;
@@ -240,6 +260,8 @@
       </div>
       <p class="remaining" id="remainingText">10,000m to go.</p>
       <button class="voice-toggle" id="voiceToggleButton" type="button">Voice: On</button>
+      <label class="voice-select-label" for="voiceSelect">Voice selection</label>
+      <select class="voice-select" id="voiceSelect"></select>
     </section>
 
     <section class="people" id="peopleList"></section>
@@ -267,11 +289,19 @@
       "Strong strokes, smooth rhythm.",
       "Poseidon officially approves this lap."
     ];
+    const ELEVENLABS_VOICE_OPTIONS = [
+      { key: "ELEVENLABS_VOICE_ID", label: "Voice 1" },
+      { key: "ELEVENLABS_VOICE_ID2", label: "Voice 2" },
+      { key: "ELEVENLABS_VOICE_ID3", label: "Voice 3" },
+      { key: "ELEVENLABS_VOICE_ID4", label: "Voice 4" },
+      { key: "ELEVENLABS_VOICE_ID5", label: "Voice 5" }
+    ];
 
     const state = {
       lapsByPerson: {},
       reachedMilestones: [],
-      voiceEnabled: true
+      voiceEnabled: true,
+      selectedVoiceKey: ELEVENLABS_VOICE_OPTIONS[0].key
     };
 
     const peopleList = document.getElementById("peopleList");
@@ -280,13 +310,17 @@
     const progressFillEl = document.getElementById("progressFill");
     const remainingTextEl = document.getElementById("remainingText");
     const voiceToggleButton = document.getElementById("voiceToggleButton");
+    const voiceSelectEl = document.getElementById("voiceSelect");
     const resetButton = document.getElementById("resetButton");
     const toastEl = document.getElementById("toast");
 
     let toastTimer = null;
     let shoutIndex = 0;
     let preferredVoice = null;
-    const canSpeak =
+    let activeAudio = null;
+    let activeAudioUrl = null;
+    let ttsAbortController = null;
+    const canUseBrowserSpeech =
       typeof window !== "undefined" &&
       "speechSynthesis" in window &&
       "SpeechSynthesisUtterance" in window;
@@ -317,10 +351,15 @@
           ? parsed.reachedMilestones.filter((m) => MILESTONES.includes(m))
           : [];
         state.voiceEnabled = parsed?.voiceEnabled !== false;
+        const parsedVoiceKey = String(parsed?.selectedVoiceKey || "");
+        state.selectedVoiceKey = ELEVENLABS_VOICE_OPTIONS.some((option) => option.key === parsedVoiceKey)
+          ? parsedVoiceKey
+          : ELEVENLABS_VOICE_OPTIONS[0].key;
       } catch {
         PEOPLE.forEach((name) => (state.lapsByPerson[name] = 0));
         state.reachedMilestones = [];
         state.voiceEnabled = true;
+        state.selectedVoiceKey = ELEVENLABS_VOICE_OPTIONS[0].key;
       }
     }
 
@@ -339,8 +378,26 @@
       }, 2400);
     }
 
+    function stopCurrentSpeech() {
+      if (ttsAbortController) {
+        ttsAbortController.abort();
+        ttsAbortController = null;
+      }
+      if (activeAudio) {
+        activeAudio.pause();
+        activeAudio = null;
+      }
+      if (activeAudioUrl) {
+        URL.revokeObjectURL(activeAudioUrl);
+        activeAudioUrl = null;
+      }
+      if (canUseBrowserSpeech) {
+        window.speechSynthesis.cancel();
+      }
+    }
+
     function selectPreferredEnglishVoice() {
-      if (!canSpeak) return;
+      if (!canUseBrowserSpeech) return;
       const voices = window.speechSynthesis.getVoices();
       if (!voices.length) return;
 
@@ -363,8 +420,8 @@
       preferredVoice = rankedVoice;
     }
 
-    function speakText(text) {
-      if (!canSpeak || !state.voiceEnabled) return;
+    function speakWithBrowserVoice(text) {
+      if (!canUseBrowserSpeech) return;
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = "en-US";
@@ -377,16 +434,51 @@
       window.speechSynthesis.speak(utterance);
     }
 
-    function updateVoiceButton() {
-      if (!canSpeak) {
-        voiceToggleButton.disabled = true;
-        voiceToggleButton.textContent = "Voice not supported on this browser";
-        voiceToggleButton.style.background = "#475569";
-        return;
+    async function speakWithElevenLabs(text) {
+      ttsAbortController = new AbortController();
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voiceKey: state.selectedVoiceKey }),
+        signal: ttsAbortController.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`TTS request failed (${response.status})`);
       }
-      voiceToggleButton.disabled = false;
+
+      const audioBlob = await response.blob();
+      activeAudioUrl = URL.createObjectURL(audioBlob);
+      activeAudio = new Audio(activeAudioUrl);
+      await activeAudio.play();
+    }
+
+    async function speakText(text) {
+      if (!state.voiceEnabled) return;
+
+      stopCurrentSpeech();
+      try {
+        await speakWithElevenLabs(text);
+      } catch {
+        // Fall back to browser speech if API fails or is unavailable.
+        speakWithBrowserVoice(text);
+      }
+    }
+
+    function updateVoiceButton() {
       voiceToggleButton.textContent = state.voiceEnabled ? "Voice: On" : "Voice: Off";
       voiceToggleButton.style.background = state.voiceEnabled ? "#0ea5e9" : "#64748b";
+    }
+
+    function renderVoiceOptions() {
+      voiceSelectEl.innerHTML = "";
+      for (const option of ELEVENLABS_VOICE_OPTIONS) {
+        const optionEl = document.createElement("option");
+        optionEl.value = option.key;
+        optionEl.textContent = option.label;
+        voiceSelectEl.append(optionEl);
+      }
+      voiceSelectEl.value = state.selectedVoiceKey;
     }
 
     function checkMilestones(totalMeters) {
@@ -511,17 +603,30 @@
         showToast("Voice shout-outs enabled.", "done");
         speakText("Voice shout-outs enabled.");
       } else {
-        if (canSpeak) window.speechSynthesis.cancel();
+        stopCurrentSpeech();
         showToast("Voice shout-outs muted.", "warn");
+      }
+    });
+
+    voiceSelectEl.addEventListener("change", () => {
+      const selected = voiceSelectEl.value;
+      if (!ELEVENLABS_VOICE_OPTIONS.some((option) => option.key === selected)) return;
+      state.selectedVoiceKey = selected;
+      saveState();
+      const selectedVoice = ELEVENLABS_VOICE_OPTIONS.find((option) => option.key === selected);
+      showToast(`Switched to ${selectedVoice?.label || "selected voice"}.`, "done");
+      if (state.voiceEnabled) {
+        speakText("Voice switched. Ready to cheer your next lap.");
       }
     });
 
     loadState();
     selectPreferredEnglishVoice();
-    if (canSpeak && window.speechSynthesis.onvoiceschanged !== undefined) {
+    if (canUseBrowserSpeech && window.speechSynthesis.onvoiceschanged !== undefined) {
       window.speechSynthesis.onvoiceschanged = selectPreferredEnglishVoice;
     }
     updateVoiceButton();
+    renderVoiceOptions();
     renderPeople();
     updateSummary();
   </script>
