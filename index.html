@@ -320,6 +320,7 @@
     let activeAudio = null;
     let activeAudioUrl = null;
     let ttsAbortController = null;
+    const recentShouts = [];
     const canUseBrowserSpeech =
       typeof window !== "undefined" &&
       "speechSynthesis" in window &&
@@ -526,6 +527,44 @@
       return `${name}: ${shout}`;
     }
 
+    async function getAiShout(name, totalMeters) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1200);
+      try {
+        const response = await fetch("/api/shout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            swimmerName: name,
+            totalMeters,
+            recentShouts
+          }),
+          signal: controller.signal
+        });
+
+        if (!response.ok) throw new Error(`Shout API failed (${response.status})`);
+        const data = await response.json();
+        const shout = String(data?.shout || "").trim();
+        if (!shout) throw new Error("Empty shout");
+
+        const finalShout = `${name}: ${shout}`;
+        recentShouts.push(shout);
+        if (recentShouts.length > 30) recentShouts.shift();
+        return finalShout;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    async function getRandomShout(name) {
+      const { totalMeters } = getTotals();
+      try {
+        return await getAiShout(name, totalMeters);
+      } catch {
+        return nextShout(name);
+      }
+    }
+
     function renderPeople() {
       peopleList.innerHTML = "";
       for (const name of PEOPLE) {
@@ -563,13 +602,13 @@
         plusBtn.type = "button";
         plusBtn.setAttribute("aria-label", `Increase laps for ${name}`);
         plusBtn.textContent = "+";
-        plusBtn.addEventListener("click", () => {
+        plusBtn.addEventListener("click", async () => {
           state.lapsByPerson[name] += 1;
           saveState();
           renderPeople();
           const milestoneTriggered = updateSummary();
           if (!milestoneTriggered) {
-            const shout = nextShout(name);
+            const shout = await getRandomShout(name);
             showToast(shout, "done");
             speakText(shout);
           }
